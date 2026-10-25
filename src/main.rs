@@ -14,18 +14,17 @@ use std::sync::mpsc;
 use server::Event;
 use slint::{Model, ModelRc, VecModel};
 
-/// 日志最多保留的行数，超出后丢弃最早的记录
+/// 日志最多保留行数，超出丢弃最早的
 const MAX_LOG_ROWS: usize = 500;
 
 thread_local! {
-    /// 当前服务实例。只在 UI 线程访问（按钮回调与事件回调都在此线程），因此用 thread_local 而非 Rc 共享
+    /// 只在 UI 线程访问，故用 thread_local
     static SERVER: RefCell<Option<server::ServerHandle>> = const { RefCell::new(None) };
 }
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
 
-    // ---- 监听地址列表 ----
     let adapters = Rc::new(net::list());
     let labels: Vec<slint::SharedString> = adapters
         .iter()
@@ -34,18 +33,16 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_adapters(ModelRc::new(VecModel::from(labels)));
     ui.set_adapter_index(0);
 
-    // ---- 默认根目录：程序启动时的工作目录 ----
+    // 默认根目录取启动时的工作目录
     let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     ui.set_dir_text(start_dir.display().to_string().into());
     ui.set_hint("选择监听地址和根目录，然后启动服务".into());
 
-    // ---- 日志模型 ----
     let logs: Rc<VecModel<LogEntry>> = Rc::new(VecModel::default());
     ui.set_logs(ModelRc::from(logs.clone()));
 
     let (tx, rx) = mpsc::channel::<Event>();
 
-    // ---- 启动 / 停止 ----
     {
         let weak = ui.as_weak();
         let adapters = Rc::clone(&adapters);
@@ -55,7 +52,6 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.on_toggle_requested(move || {
             let Some(ui) = weak.upgrade() else { return };
 
-            // 已在运行：停止
             let running = SERVER.with(|c| c.borrow_mut().take());
             if let Some(h) = running {
                 h.stop();
@@ -67,7 +63,6 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
-            // 未运行：校验参数后启动
             let index = ui.get_adapter_index().max(0) as usize;
             let Some(adapter) = adapters.get(index) else {
                 ui.set_hint("请选择一个监听地址".into());
@@ -109,7 +104,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // ---- 选择根目录 ----
     {
         let weak = ui.as_weak();
         ui.on_browse_requested(move || {
@@ -128,7 +122,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // ---- 清空日志 ----
     {
         let logs = Rc::clone(&logs);
         ui.on_clear_requested(move || {
@@ -136,7 +129,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // ---- 事件泵：后台线程一有请求就唤醒 UI 线程（不轮询，动画帧率也不受定时器牵制）----
+    // 事件泵：后台事件转投 UI 线程
     {
         let weak = ui.as_weak();
         std::thread::spawn(move || {
@@ -148,14 +141,14 @@ fn main() -> Result<(), slint::PlatformError> {
                     }
                 });
                 if posted.is_err() {
-                    break; // 界面已关闭
+                    break;
                 }
             }
         });
     }
 
     let result = ui.run();
-    // 关闭窗口时主动收尾，保证监听端口立即释放
+    // 关窗时停服务，立即释放端口
     SERVER.with(|c| {
         if let Some(h) = c.borrow_mut().take() {
             h.stop();
@@ -164,7 +157,6 @@ fn main() -> Result<(), slint::PlatformError> {
     result
 }
 
-/// 在 UI 线程上落地一个后台事件
 fn apply_event(ui: &AppWindow, event: Event) {
     let logs = ui.get_logs();
     let Some(model) = logs.as_any().downcast_ref::<VecModel<LogEntry>>() else {

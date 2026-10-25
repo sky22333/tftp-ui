@@ -1,8 +1,4 @@
-//! TFTP 服务端封装。
-//!
-//! 后台线程里跑一个双工作线程的 tokio 运行时，用自定义 `Handler` 把每次请求
-//! 上报给界面。服务端固定为只读：这台工具的作用是把文件发给设备，允许写入只
-//! 会增加误覆盖根目录的风险。
+//! TFTP 服务端封装：后台 tokio 运行时 + 自定义 Handler 上报事件，固定只读。
 
 use async_tftp::packet::Error as TftpError;
 use async_tftp::server::{Handler, TftpServerBuilder};
@@ -43,7 +39,7 @@ struct LogHandler {
 }
 
 impl LogHandler {
-    /// 把客户端的相对路径安全地拼到根目录下，任何越界成分直接拒绝。
+    /// 拼到根目录下，越界成分直接拒绝
     fn resolve(&self, path: &Path) -> Option<PathBuf> {
         let mut full = self.root.clone();
         for comp in path.components() {
@@ -144,7 +140,7 @@ impl ServerHandle {
 
 impl Drop for ServerHandle {
     fn drop(&mut self) {
-        // 关键：必须先通知任务退出，否则 Runtime 析构会等一个永不结束的 serve
+        // 先发停止信号，否则 Runtime 析构会等一个永不结束的 serve
         if let Some(tx) = self.shutdown.take() {
             let _ = tx.send(());
         }

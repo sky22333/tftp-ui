@@ -1,6 +1,4 @@
-// TFTP 服务端小工具 —— 扁平化界面
-// 设计约束：小工具尺寸、浅色扁平、单一强调色、无阴影无渐变、软件渲染友好
-// 几何约束：所有输入类控件统一走 Field，禁止在别处另写边框/圆角/内边距
+// 扁平化界面：小工具尺寸、单一强调色、无阴影，软件渲染友好；输入类控件统一走 Field
 
 import { ScrollView } from "std-widgets.slint";
 
@@ -27,13 +25,12 @@ global Theme {
     out property <color> danger-press: #C73338;
     out property <color> ok: #12B76A;
 
-    // 输入框唯一几何来源
+    // 输入框几何的唯一来源
     out property <length> field-height: 32px;
     out property <length> field-radius: 5px;
     out property <length> field-pad: 10px;
 }
 
-// 设置项左侧标签
 component FieldLabel inherits Text {
     width: 60px;
     color: Theme.muted;
@@ -42,9 +39,7 @@ component FieldLabel inherits Text {
     horizontal-alignment: left;
 }
 
-// 唯一的输入框实现：几何、边框、内边距、长文本省略都在这里
-// readonly = 不接收键盘输入（下拉框复用）；open = 展开时高亮边框
-// 未聚焦时用带省略号的 Text 覆盖显示，避免长路径被硬切
+// 唯一的输入框实现。readonly 供下拉框复用；未聚焦时用可省略的 Text 覆盖显示，避免长路径被硬切
 component Field inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder: "";
@@ -82,7 +77,7 @@ component Field inherits Rectangle {
     }
 }
 
-// 下拉框 = Field(readonly) + 箭头 + 点击区，几何全部继承自 Field
+// 下拉框 = Field(readonly) + 箭头 + 点击区
 component SelectField inherits Rectangle {
     in property <string> text;
     in property <bool> open;
@@ -97,7 +92,7 @@ component SelectField inherits Rectangle {
         open: root.open;
     }
 
-    // 展开时箭头上下翻转（两张小箭头交叉淡入淡出，Slint 的 Path 不支持旋转属性）
+    // 两张小箭头交叉淡入淡出实现翻转（Path 无旋转属性）
     Path {
         x: parent.width - 22px;
         y: parent.height / 2 - 3px;
@@ -127,7 +122,6 @@ component SelectField inherits Rectangle {
     }
 }
 
-// 扁平描边按钮
 component GhostButton inherits Rectangle {
     in property <string> label;
     callback clicked();
@@ -159,7 +153,6 @@ export component AppWindow inherits Window {
     default-font-family: "Microsoft YaHei";
     default-font-size: 13px;
 
-    // ---- 状态与数据 ----
     in-out property <bool> running: false;
     in-out property <bool> busy: false;
     in-out property <int> adapter-index: 0;
@@ -172,26 +165,20 @@ export component AppWindow inherits Window {
     in-out property <length> log-scroll: 0px;
     out property <length> log-max-scroll: log-view.content-height - log-view.height;
 
-    // ---- 下拉层状态 ----
     in-out property <bool> picker-open: false;
     in-out property <length> picker-x: 0px;
     in-out property <length> picker-y: 0px;
     in-out property <length> picker-w: 200px;
-    // 展开进度：由状态派生 + animate。动画挂在属性上，元素随 picker-open 创建/销毁也不会打断它
+    // 由 picker-open 派生 + animate：动画挂在属性上，元素创建/销毁不会打断它
     in-out property <float> picker-a: root.picker-open ? 1 : 0;
     animate picker-a { duration: 130ms; easing: ease-out; }
 
-    // ---- 回调 ----
     callback toggle-requested();
     callback browse-requested();
     callback clear-requested();
 
-    // ---- 原生标题栏与客户区的接缝 ----
-    // 标题栏由 DWM 绘制，色值随系统强调色变化（实测 ≈ 90% #FFFFFF + 10% AccentColor），
-    // 应用既无法控制也无法预测。这里不追颜色，而是给两块之间一条明确的虚线边界，
-    // 把不可控的色差解释为"标题栏 / 内容区"的层级关系。
-    // Slint 1.18 无虚线描边（Path 不支持 stroke-dash-array），用短划矩形拼接：
-    // 4px 实 + 3px 空，覆盖率 57%，线色 #C2C8D1 融合后 ≈ L* 87，明显重于卡片边框。
+    // 标题栏由 DWM 绘制、随系统强调色变化，无法匹配；用一条虚线边界把色差解释为层级。
+    // Slint 无虚线描边（Path 不支持 dash），用短划矩形拼接：4px 实 + 3px 空。
     Rectangle {
         x: 0;
         y: 0;
@@ -211,7 +198,6 @@ export component AppWindow inherits Window {
         padding: 16px;
         spacing: 12px;
 
-        // ---- 标题 ----
         HorizontalLayout {
             height: 28px;
             Text {
@@ -224,7 +210,6 @@ export component AppWindow inherits Window {
             Rectangle { }
         }
 
-        // ---- 设置卡片 ----
         Rectangle {
             background: Theme.card;
             border-radius: 8px;
@@ -235,7 +220,6 @@ export component AppWindow inherits Window {
                 padding: 14px;
                 spacing: 10px;
 
-                // 监听地址
                 HorizontalLayout {
                     spacing: 10px;
                     height: Theme.field-height;
@@ -255,7 +239,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                // 端口（框 + 右对齐说明，左右边界与上下两行对齐）
+                // 端口框固定宽度，右侧说明右对齐，与上下两行同栅格
                 HorizontalLayout {
                     spacing: 10px;
                     height: Theme.field-height;
@@ -273,7 +257,6 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                // 根目录
                 HorizontalLayout {
                     spacing: 10px;
                     height: Theme.field-height;
@@ -284,14 +267,13 @@ export component AppWindow inherits Window {
                     }
                     GhostButton {
                         width: 64px;
-                        label: "浏览…";
+                        label: "浏览";
                         clicked => { root.browse-requested(); }
                     }
                 }
             }
         }
 
-        // ---- 提示行 ----
         Text {
             height: 16px;
             text: root.hint;
@@ -301,7 +283,6 @@ export component AppWindow inherits Window {
             overflow: elide;
         }
 
-        // ---- 主按钮 ----
         Rectangle {
             height: 38px;
             border-radius: 6px;
@@ -327,7 +308,6 @@ export component AppWindow inherits Window {
             }
         }
 
-        // ---- 日志卡片 ----
         Rectangle {
             vertical-stretch: 1;
             background: Theme.card;
@@ -445,7 +425,7 @@ export component AppWindow inherits Window {
         }
     }
 
-    // ---- 状态胶囊（放在最后，保证绘制在最上层）----
+    // 状态胶囊放最后，保证绘制在最上层
     Rectangle {
         x: parent.width - 16px - 86px;
         y: 16px;
@@ -475,8 +455,8 @@ export component AppWindow inherits Window {
         }
     }
 
-    // ---- 下拉覆盖层：淡入/淡出 + 轻微位移；picker-a 归零后元素才移除 ----
-    // 注意：透明度必须落在「遮罩」这个子元素上，不能落在容器上，否则面板会被一起压暗
+    // 下拉覆盖层：淡入 + 轻微位移，picker-a 归零后移除。
+    // 遮罩的透明度必须落在子元素上，落在容器上会把面板一起压暗。
     if root.picker-a > 0.02 : Rectangle {
         x: 0;
         y: 0;
