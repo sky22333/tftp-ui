@@ -11,7 +11,7 @@ Windows 上的轻量 TFTP 服务端 GUI。Rust + Slint，软件渲染，单文�
 
 ## 使用
 
-1. 双击 `TFTP服务端.exe`
+1. 双击 `tftp-ui.exe`
 2. 「监听地址」选接设备的那块网卡，「根目录」选文件所在文件夹
 3. 点「启动服务」
 4. 设备端执行 `tftp <本机IP> GET <文件名>`；U-Boot / Breed 下为 `tftpboot`
@@ -26,7 +26,7 @@ Windows 上的轻量 TFTP 服务端 GUI。Rust + Slint，软件渲染，单文�
 cargo build --release
 ```
 
-产物 `target/release/tftp-tool.exe`。单文件依赖 `.cargo/config.toml` 中的 `+crt-static`，勿删。
+产物 `target/release/tftp-ui.exe`。单文件依赖 `.cargo/config.toml` 中的 `+crt-static`，勿删。
 
 ## 发布
 
