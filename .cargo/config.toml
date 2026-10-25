@@ -1,0 +1,3 @@
+[target.x86_64-pc-windows-msvc]
+# 静态链接 C 运行库，保证 exe 不依赖 VC++ Redistributable，可直接拷走运行
+rustflags = ["-C", "target-feature=+crt-static"]

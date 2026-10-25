@@ -1,0 +1,7 @@
+# 统一 LF：避免 Windows 上的 CRLF 让 diff 与实际内容不一致
+* text=auto eol=lf
+
+# 二进制资源不做换行转换
+*.exe binary
+*.ico binary
+*.png binary

@@ -1,0 +1,83 @@
+name: 发布 TFTP 服务端
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '版本标签（如 v1.0.0），将创建同名 tag 与 Release'
+        required: true
+        type: string
+      prerelease:
+        description: '标记为预发布'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 校验标签格式
+        shell: pwsh
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:TAG -notmatch '^v?\d+\.\d+\.\d+([-+][0-9A-Za-z.\-]+)*$') {
+            Write-Host "::error::标签格式不合法：$env:TAG，期望 v1.0.0 或 1.0.0"
+            exit 1
+          }
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-release
+
+      - name: 编译
+        run: cargo build --release --locked
+
+      - name: 校验静态 CRT
+        shell: pwsh
+        run: |
+          $exe = 'target/release/tftp-tool.exe'
+          if (-not (Test-Path $exe)) { Write-Host "::error::未找到 $exe"; exit 1 }
+          $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Resolve-Path $exe)))
+          foreach ($dll in 'VCRUNTIME140', 'MSVCP140', 'ucrtbase', 'api-ms-win-crt') {
+            if ($text.Contains($dll)) { Write-Host "::error::检测到动态依赖 $dll"; exit 1 }
+          }
+
+      - name: 整理产物
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/tftp-tool.exe 'dist/TFTP服务端.exe'
+          $hash = (Get-FileHash 'dist/TFTP服务端.exe' -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("$PWD/dist/TFTP服务端.exe.sha256", "$hash  TFTP服务端.exe")
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: TFTP 服务端 ${{ inputs.tag }}
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            dist/TFTP服务端.exe
+            dist/TFTP服务端.exe.sha256
+          body: |
+            轻量 TFTP 服务端，Windows x64 单 exe，静态 CRT，免装 VC++ 运行库。
+
+            **使用**：双击运行 → 选网卡与根目录 → 启动服务 → 设备端执行 `tftp <本机IP> GET <文件>`。
+
+            **校验**：`certutil -hashfile TFTP服务端.exe SHA256`，与 `.sha256` 文件比对。
+
+            > 只读模式：写入请求与路径穿越尝试均被拒绝并记入日志。
