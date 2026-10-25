@@ -7,11 +7,6 @@ on:
         description: '版本标签（如 v1.0.0），将创建同名 tag 与 Release'
         required: true
         type: string
-      prerelease:
-        description: '标记为预发布'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -69,7 +64,6 @@ jobs:
         with:
           tag_name: ${{ inputs.tag }}
           name: TFTP 服务端 ${{ inputs.tag }}
-          prerelease: ${{ inputs.prerelease }}
           files: |
             dist/tftp-ui.exe
             dist/tftp-ui.exe.sha256
