@@ -7,7 +7,7 @@ Windows 上的轻量 TFTP 服务端 GUI。Rust + Slint，软件渲染，单文�
 - 监听地址可选单块 IPv4 网卡或全部网卡，地址列表可刷新，端口可改
 - 任选根目录，只读对外提供文件
 - 请求日志：显示读请求、文件已接受或请求被拒绝；不表示传输完成
-- 静态 CRT，约 9.5 MB，运行内存约 33 MB
+- 静态 CRT，约 9.5 MB，运行内存约 15 MB
 
 ## 使用
 
@@ -16,18 +16,10 @@ Windows 上的轻量 TFTP 服务端 GUI。Rust + Slint，软件渲染，单文�
 3. 点「启动服务」
 4. 设备端执行 `tftp <本机IP> GET <文件名>`；U-Boot / Breed 下为 `tftpboot`
 
-## 只读
-
-不提供写入。写入请求、路径穿越（`..`、绝对路径）一律拒绝并记入日志。
-
 ## 构建
 
 ```bash
 cargo build --release
 ```
 
-产物 `target/release/tftp-ui.exe`。单文件依赖 `.cargo/config.toml` 中的 `+crt-static`，勿删。
-
-## 发布
-
-Actions → 「发布 TFTP 服务端」→ Run workflow，填版本标签（如 `v1.0.0`）。流水线编译后校验静态 CRT，再创建同名 tag 与 Release。
+产物 `target/release/tftp-ui.exe`。单文件依赖 `.cargo/config.toml` 中的 `+crt-static`
