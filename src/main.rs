@@ -25,18 +25,27 @@ thread_local! {
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
 
-    let adapters = Rc::new(net::list());
-    let labels: Vec<slint::SharedString> = adapters
+    let (initial_adapters, adapter_error) = match net::list() {
+        Ok(adapters) => (adapters, None),
+        Err(err) => (vec![net::all_addresses()], Some(err)),
+    };
+    let labels: Vec<slint::SharedString> = initial_adapters
         .iter()
         .map(|a| a.label.clone().into())
         .collect();
     ui.set_adapters(ModelRc::new(VecModel::from(labels)));
     ui.set_adapter_index(0);
+    let adapters = Rc::new(RefCell::new(initial_adapters));
 
     // 默认根目录取启动时的工作目录
     let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     ui.set_dir_text(start_dir.display().to_string().into());
-    ui.set_hint("选择监听地址和根目录，然后启动服务".into());
+    if let Some(err) = adapter_error {
+        ui.set_hint(format!("获取地址失败：{err}，可点击刷新重试").into());
+        ui.set_hint_error(true);
+    } else {
+        ui.set_hint("选择监听地址和根目录，然后启动服务".into());
+    }
 
     let logs: Rc<VecModel<LogEntry>> = Rc::new(VecModel::default());
     ui.set_logs(ModelRc::from(logs.clone()));
@@ -63,8 +72,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
 
-            let index = ui.get_adapter_index().max(0) as usize;
-            let Some(adapter) = adapters.get(index) else {
+            let adapters = adapters.borrow();
+            let Some(adapter) = usize::try_from(ui.get_adapter_index())
+                .ok()
+                .and_then(|i| adapters.get(i))
+            else {
                 ui.set_hint("请选择一个监听地址".into());
                 ui.set_hint_error(true);
                 return;
@@ -98,6 +110,43 @@ fn main() -> Result<(), slint::PlatformError> {
                 Err(err) => {
                     ui.set_busy(false);
                     ui.set_hint(format!("启动失败：{err}").into());
+                    ui.set_hint_error(true);
+                }
+            }
+        });
+    }
+
+    {
+        let weak = ui.as_weak();
+        let adapters = Rc::clone(&adapters);
+        ui.on_refresh_adapters_requested(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            match net::list() {
+                Ok(updated) => {
+                    let old = adapters.borrow();
+                    let selected = usize::try_from(ui.get_adapter_index())
+                        .ok()
+                        .and_then(|i| old.get(i))
+                        .map(|a| (a.label.clone(), a.ip));
+                    let index = selected.and_then(|key| {
+                        updated.iter().position(|a| (a.label.clone(), a.ip) == key)
+                    });
+                    drop(old);
+                    let labels: Vec<slint::SharedString> =
+                        updated.iter().map(|a| a.label.clone().into()).collect();
+                    *adapters.borrow_mut() = updated;
+                    ui.set_adapters(ModelRc::new(VecModel::from(labels)));
+                    ui.set_adapter_index(index.map_or(-1, |i| i as i32));
+                    if index.is_none() {
+                        ui.set_hint("原监听地址已不可用，请重新选择".into());
+                        ui.set_hint_error(true);
+                    } else {
+                        ui.set_hint("选择监听地址和根目录，然后启动服务".into());
+                        ui.set_hint_error(false);
+                    }
+                }
+                Err(err) => {
+                    ui.set_hint(format!("刷新地址失败：{err}").into());
                     ui.set_hint_error(true);
                 }
             }
@@ -158,11 +207,11 @@ fn main() -> Result<(), slint::PlatformError> {
 }
 
 fn apply_event(ui: &AppWindow, event: Event) {
+    let follow_log = ui.get_log_scroll() >= ui.get_log_max_scroll() - 2.0;
     let logs = ui.get_logs();
     let Some(model) = logs.as_any().downcast_ref::<VecModel<LogEntry>>() else {
         return;
     };
-    let mut added = false;
 
     match event {
         Event::Started(addr) => {
@@ -171,11 +220,6 @@ fn apply_event(ui: &AppWindow, event: Event) {
             ui.set_hint(format!("正在监听 {addr}（只读模式）").into());
             ui.set_hint_error(false);
             append(model, system_entry(format!("服务已启动，监听 {addr}")));
-            added = true;
-        }
-        Event::Stopped => {
-            ui.set_running(false);
-            ui.set_busy(false);
         }
         Event::Failed(msg) => {
             let taken = SERVER.with(|c| c.borrow_mut().take());
@@ -187,7 +231,18 @@ fn apply_event(ui: &AppWindow, event: Event) {
             ui.set_hint(format!("出错了：{msg}").into());
             ui.set_hint_error(true);
             append(model, system_entry(format!("服务异常：{msg}")));
-            added = true;
+        }
+        Event::ReadRequested { client, file } => {
+            append(
+                model,
+                LogEntry {
+                    time: now().into(),
+                    client: client.ip().to_string().into(),
+                    kind: "读请求".into(),
+                    file: file.into(),
+                    size: "—".into(),
+                },
+            );
         }
         Event::Read { client, file, size } => {
             append(
@@ -195,25 +250,11 @@ fn apply_event(ui: &AppWindow, event: Event) {
                 LogEntry {
                     time: now().into(),
                     client: client.ip().to_string().into(),
-                    kind: "读取".into(),
+                    kind: "已接受".into(),
                     file: file.into(),
                     size: human_size(size).into(),
                 },
             );
-            added = true;
-        }
-        Event::Write { client, file, size } => {
-            append(
-                model,
-                LogEntry {
-                    time: now().into(),
-                    client: client.ip().to_string().into(),
-                    kind: "写入".into(),
-                    file: file.into(),
-                    size: human_size(size).into(),
-                },
-            );
-            added = true;
         }
         Event::Denied {
             client,
@@ -230,15 +271,16 @@ fn apply_event(ui: &AppWindow, event: Event) {
                     size: "—".into(),
                 },
             );
-            added = true;
         }
     }
 
-    if added {
-        let max = ui.get_log_max_scroll();
-        if max > 0.0 {
-            ui.set_log_scroll(max);
-        }
+    if follow_log {
+        let weak = ui.as_weak();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_log_scroll(ui.get_log_max_scroll().max(0.0));
+            }
+        });
     }
 }
 

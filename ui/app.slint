@@ -1,6 +1,6 @@
-// 扁平化界面：小工具尺寸、单一强调色、无阴影，软件渲染友好；输入类控件统一走 Field
+// 简洁布局，交互控件使用 Slint 标准组件。
 
-import { ScrollView } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, ScrollView } from "std-widgets.slint";
 
 export struct LogEntry {
     time: string,
@@ -19,16 +19,10 @@ global Theme {
     out property <color> muted: #8A9099;
     out property <color> faint: #B6BBC3;
     out property <color> accent: #2563EB;
-    out property <color> accent-dim: #3B7BF6;
-    out property <color> accent-press: #1E4FC4;
     out property <color> danger: #E5484D;
-    out property <color> danger-press: #C73338;
     out property <color> ok: #12B76A;
 
-    // 输入框几何的唯一来源
     out property <length> field-height: 32px;
-    out property <length> field-radius: 5px;
-    out property <length> field-pad: 10px;
 }
 
 component FieldLabel inherits Text {
@@ -37,111 +31,6 @@ component FieldLabel inherits Text {
     font-size: 12px;
     vertical-alignment: center;
     horizontal-alignment: left;
-}
-
-// 唯一的输入框实现。readonly 供下拉框复用；未聚焦时用可省略的 Text 覆盖显示，避免长路径被硬切
-component Field inherits Rectangle {
-    in-out property <string> text;
-    in property <string> placeholder: "";
-    in property <bool> readonly: false;
-    in property <bool> open: false;
-    out property <bool> focused: input.has-focus;
-
-    height: Theme.field-height;
-    border-radius: Theme.field-radius;
-    border-width: 1px;
-    border-color: (root.open || root.focused) ? Theme.accent : Theme.border;
-    background: Theme.card;
-
-    input := TextInput {
-        x: Theme.field-pad;
-        width: parent.width - Theme.field-pad * 2;
-        height: parent.height;
-        text <=> root.text;
-        read-only: root.readonly;
-        color: root.readonly || !input.has-focus ? transparent : Theme.text;
-        font-size: 13px;
-        single-line: true;
-        vertical-alignment: center;
-    }
-
-    if !root.focused : Text {
-        x: Theme.field-pad;
-        width: parent.width - (root.readonly ? Theme.field-pad * 2 + 12px : Theme.field-pad * 2);
-        height: parent.height;
-        text: root.text == "" ? root.placeholder : root.text;
-        color: root.text == "" ? Theme.faint : Theme.text;
-        font-size: 13px;
-        vertical-alignment: center;
-        overflow: elide;
-    }
-}
-
-// 下拉框 = Field(readonly) + 箭头 + 点击区
-component SelectField inherits Rectangle {
-    in property <string> text;
-    in property <bool> open;
-    in property <float> progress: 0;
-    callback open-requested(Point, length, length);
-
-    f := Field {
-        width: parent.width;
-        height: parent.height;
-        text: root.text;
-        readonly: true;
-        open: root.open;
-    }
-
-    // 两张小箭头交叉淡入淡出实现翻转（Path 无旋转属性）
-    Path {
-        x: parent.width - 22px;
-        y: parent.height / 2 - 3px;
-        width: 10px;
-        height: 6px;
-        commands: "M 0 0 L 5 5 L 10 0";
-        stroke: root.open || touch.has-hover ? Theme.accent : #9AA0A8;
-        stroke-width: 1.6px;
-        fill: transparent;
-        opacity: 1 - root.progress;
-    }
-
-    Path {
-        x: parent.width - 22px;
-        y: parent.height / 2 - 3px;
-        width: 10px;
-        height: 6px;
-        commands: "M 0 5 L 5 0 L 10 5";
-        stroke: root.open || touch.has-hover ? Theme.accent : #9AA0A8;
-        stroke-width: 1.6px;
-        fill: transparent;
-        opacity: root.progress;
-    }
-
-    touch := TouchArea {
-        clicked => { root.open-requested(self.absolute-position, self.width, self.height); }
-    }
-}
-
-component GhostButton inherits Rectangle {
-    in property <string> label;
-    callback clicked();
-    height: Theme.field-height;
-    border-radius: Theme.field-radius;
-    border-width: 1px;
-    border-color: touch.has-hover ? Theme.accent : Theme.border;
-    background: touch.pressed ? #EDF2FE : (touch.has-hover ? #F7F9FC : Theme.card);
-
-    Text {
-        text: root.label;
-        color: touch.has-hover ? Theme.accent : Theme.text;
-        font-size: 12px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
 }
 
 export component AppWindow inherits Window {
@@ -165,17 +54,10 @@ export component AppWindow inherits Window {
     in-out property <length> log-scroll: 0px;
     out property <length> log-max-scroll: log-view.content-height - log-view.height;
 
-    in-out property <bool> picker-open: false;
-    in-out property <length> picker-x: 0px;
-    in-out property <length> picker-y: 0px;
-    in-out property <length> picker-w: 200px;
-    // 由 picker-open 派生 + animate：动画挂在属性上，元素创建/销毁不会打断它
-    in-out property <float> picker-a: root.picker-open ? 1 : 0;
-    animate picker-a { duration: 130ms; easing: ease-out; }
-
     callback toggle-requested();
     callback browse-requested();
     callback clear-requested();
+    callback refresh-adapters-requested();
 
     // 标题栏由 DWM 绘制、随系统强调色变化，无法匹配；用一条虚线边界把色差解释为层级。
     // Slint 无虚线描边（Path 不支持 dash），用短划矩形拼接：4px 实 + 3px 空。
@@ -224,18 +106,23 @@ export component AppWindow inherits Window {
                     spacing: 10px;
                     height: Theme.field-height;
                     FieldLabel { text: "监听地址"; }
-                    SelectField {
+                    ComboBox {
                         horizontal-stretch: 1;
-                        text: root.adapters.length > 0 && root.adapter-index >= 0 && root.adapter-index < root.adapters.length
-                            ? root.adapters[root.adapter-index] : "";
-                        open: root.picker-open;
-                        progress: root.picker-a;
-                        open-requested(pos, w, h) => {
-                            root.picker-x = pos.x;
-                            root.picker-y = pos.y + h;
-                            root.picker-w = w;
-                            root.picker-open = true;
+                        enabled: !root.running && !root.busy;
+                        model: root.adapters;
+                        current-index <=> root.adapter-index;
+                        changed has-focus => {
+                            if self.has-focus && self.enabled { root.refresh-adapters-requested(); }
                         }
+                    }
+                    Button {
+                        icon: @image-url("../assets/refresh.svg");
+                        icon-size: 16px;
+                        colorize-icon: true;
+                        enabled: !root.running && !root.busy;
+                        accessible-label: "刷新地址";
+                        Tooltip { text: @markdown("刷新地址"); }
+                        clicked => { root.refresh-adapters-requested(); }
                     }
                 }
 
@@ -244,8 +131,9 @@ export component AppWindow inherits Window {
                     spacing: 10px;
                     height: Theme.field-height;
                     FieldLabel { text: "端口"; }
-                    Field {
-                        width: 96px;
+                    LineEdit {
+                        width: 160px;
+                        enabled: !root.running && !root.busy;
                         text <=> root.port-text;
                     }
                     Rectangle { }
@@ -261,13 +149,18 @@ export component AppWindow inherits Window {
                     spacing: 10px;
                     height: Theme.field-height;
                     FieldLabel { text: "根目录"; }
-                    Field {
+                    LineEdit {
+                        enabled: !root.running && !root.busy;
                         text <=> root.dir-text;
-                        placeholder: "点击右侧选择目录";
+                        placeholder-text: "选择根目录";
                     }
-                    GhostButton {
-                        width: 64px;
-                        label: "浏览";
+                    Button {
+                        icon: @image-url("../assets/folder.svg");
+                        icon-size: 16px;
+                        colorize-icon: true;
+                        accessible-label: "选择根目录";
+                        Tooltip { text: @markdown("选择根目录"); }
+                        enabled: !root.running && !root.busy;
                         clicked => { root.browse-requested(); }
                     }
                 }
@@ -283,29 +176,12 @@ export component AppWindow inherits Window {
             overflow: elide;
         }
 
-        Rectangle {
+        Button {
             height: 38px;
-            border-radius: 6px;
-            background: root.busy
-                ? #C9CDD4
-                : (root.running
-                    ? (main-touch.pressed ? Theme.danger-press : (main-touch.has-hover ? #EE5F63 : Theme.danger))
-                    : (main-touch.pressed ? Theme.accent-press : (main-touch.has-hover ? Theme.accent-dim : Theme.accent)));
-
-            Text {
-                text: root.busy ? "请稍候…" : (root.running ? "停止服务" : "启动服务");
-                color: #FFFFFF;
-                font-size: 14px;
-                font-weight: 600;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-
-            main-touch := TouchArea {
-                clicked => {
-                    if (!root.busy) { root.toggle-requested(); }
-                }
-            }
+            primary: true;
+            enabled: !root.busy;
+            text: root.busy ? "请稍候…" : (root.running ? "停止服务" : "启动服务");
+            clicked => { root.toggle-requested(); }
         }
 
         Rectangle {
@@ -321,7 +197,7 @@ export component AppWindow inherits Window {
                 spacing: 6px;
 
                 HorizontalLayout {
-                    height: 20px;
+                    height: 32px;
                     padding-left: 14px;
                     padding-right: 14px;
                     Text {
@@ -332,13 +208,33 @@ export component AppWindow inherits Window {
                         vertical-alignment: center;
                     }
                     Rectangle { }
-                    Text {
-                        text: "清空";
-                        font-size: 11px;
-                        color: clear-touch.has-hover ? Theme.danger : Theme.muted;
-                        vertical-alignment: center;
-                        clear-touch := TouchArea {
+                    FocusScope {
+                        width: 32px;
+                        height: 32px;
+                        enabled: root.logs.length > 0;
+                        accessible-role: button;
+                        accessible-label: "清空日志";
+                        accessible-enabled: self.enabled;
+                        accessible-action-default => { if self.enabled { root.clear-requested(); } }
+                        Tooltip { text: @markdown("清空日志"); }
+                        Image {
+                            x: 8px;
+                            y: 8px;
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("../assets/clear.svg");
+                            opacity: parent.enabled ? 1 : 0.4;
+                        }
+                        TouchArea {
+                            enabled: parent.enabled;
                             clicked => { root.clear-requested(); }
+                        }
+                        key-pressed(event) => {
+                            if self.enabled && (event.text == Key.Space || event.text == Key.Return) {
+                                root.clear-requested();
+                                return accept;
+                            }
+                            return reject;
                         }
                     }
                 }
@@ -350,7 +246,7 @@ export component AppWindow inherits Window {
                     spacing: 6px;
                     Text { text: "时间"; width: 56px; color: #A8AEB7; font-size: 10px; vertical-alignment: center; }
                     Text { text: "客户端"; width: 106px; color: #A8AEB7; font-size: 10px; vertical-alignment: center; }
-                    Text { text: "操作"; width: 32px; color: #A8AEB7; font-size: 10px; vertical-alignment: center; }
+                    Text { text: "事件"; width: 48px; color: #A8AEB7; font-size: 10px; vertical-alignment: center; }
                     Text { text: "文件"; horizontal-stretch: 1; color: #A8AEB7; font-size: 10px; vertical-alignment: center; }
                     Text { text: "大小"; width: 54px; color: #A8AEB7; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; }
                 }
@@ -387,8 +283,8 @@ export component AppWindow inherits Window {
                                 }
                                 Text {
                                     text: entry.kind;
-                                    width: 32px;
-                                    color: entry.kind == "写入" ? #E08700 : (entry.kind == "读取" ? Theme.accent : (entry.kind == "系统" ? Theme.muted : Theme.danger));
+                                    width: 48px;
+                                    color: entry.kind == "拒绝" ? Theme.danger : (entry.kind == "系统" ? Theme.muted : Theme.accent);
                                     font-size: 11px;
                                     vertical-alignment: center;
                                 }
@@ -455,66 +351,4 @@ export component AppWindow inherits Window {
         }
     }
 
-    // 下拉覆盖层：淡入 + 轻微位移，picker-a 归零后移除。
-    // 遮罩的透明度必须落在子元素上，落在容器上会把面板一起压暗。
-    if root.picker-a > 0.02 : Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: parent.height;
-
-        Rectangle {
-            background: #1F2329;
-            opacity: root.picker-a * 0.10;
-        }
-
-        bg-dismiss := TouchArea {
-            clicked => {
-                root.picker-open = false;
-            }
-        }
-
-        Rectangle {
-            x: root.picker-x;
-            y: root.picker-y + 4px - (1 - root.picker-a) * 8px;
-            width: root.picker-w;
-            height: min(root.adapters.length * 30px + 12px, 264px);
-            border-radius: 6px;
-            border-width: 1px;
-            border-color: Theme.border;
-            background: Theme.card;
-            opacity: root.picker-a;
-
-            ScrollView {
-                VerticalLayout {
-                    padding: 4px;
-                    for option[i] in root.adapters : Rectangle {
-                        height: 30px;
-                        border-radius: 4px;
-                        background: i == root.adapter-index
-                            ? #EDF2FE
-                            : (opt-touch.has-hover ? #F5F7FA : transparent);
-
-                        Text {
-                            x: 10px;
-                            width: parent.width - 20px;
-                            height: parent.height;
-                            text: option;
-                            color: i == root.adapter-index ? Theme.accent : Theme.text;
-                            font-size: 13px;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-
-                        opt-touch := TouchArea {
-                            clicked => {
-                                root.adapter-index = i;
-                                root.picker-open = false;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }

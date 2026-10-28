@@ -1,54 +1,45 @@
 //! 枚举本机可用 IPv4 地址，TFTP 刷机场景全部走 IPv4。
 
-use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr};
 
-#[derive(Clone)]
 pub struct Adapter {
     pub label: String,
     pub ip: IpAddr,
 }
 
-/// 首项为 0.0.0.0，即监听全部网卡。
-pub fn list() -> Vec<Adapter> {
-    let mut out = vec![Adapter {
-        label: "全部网卡 · 0.0.0.0".to_string(),
+pub fn all_addresses() -> Adapter {
+    Adapter {
+        label: "全部 IPv4 地址 · 0.0.0.0".to_string(),
         ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-    }];
+    }
+}
 
-    let Ok(ifaces) = if_addrs::get_if_addrs() else {
-        return out;
-    };
+/// 首项为 0.0.0.0，即监听全部网卡。
+pub fn list() -> std::io::Result<Vec<Adapter>> {
+    let mut out = vec![all_addresses()];
 
-    let mut seen = HashSet::new();
-    let mut items: Vec<(String, IpAddr)> = Vec::new();
+    let ifaces = if_addrs::get_if_addrs()?;
+    let mut items: Vec<(String, Ipv4Addr)> = Vec::new();
 
     for it in ifaces {
-        let ip = match it.addr {
-            if_addrs::IfAddr::V4(a) => IpAddr::V4(a.ip),
-            if_addrs::IfAddr::V6(a) => IpAddr::V6(a.ip),
+        let if_addrs::IfAddr::V4(addr) = it.addr else {
+            continue;
         };
-
-        // 跳过回环与 169.254 链路本地地址
-        let IpAddr::V4(v4) = ip else { continue };
-        if v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() {
+        if addr.ip == Ipv4Addr::LOCALHOST {
             continue;
         }
-        if !seen.insert(v4) {
-            continue;
-        }
-
-        items.push((it.name.to_string(), ip));
+        items.push((it.name, addr.ip));
     }
 
-    items.sort_by(|a, b| a.0.cmp(&b.0));
+    items.sort();
+    items.dedup();
 
     for (name, ip) in items {
         out.push(Adapter {
             label: format!("{name} · {ip}"),
-            ip,
+            ip: IpAddr::V4(ip),
         });
     }
 
-    out
+    Ok(out)
 }

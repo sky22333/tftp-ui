@@ -13,12 +13,11 @@ use tokio::sync::oneshot;
 
 #[derive(Debug)]
 pub enum Event {
-    Read {
+    ReadRequested {
         client: SocketAddr,
         file: String,
-        size: Option<u64>,
     },
-    Write {
+    Read {
         client: SocketAddr,
         file: String,
         size: Option<u64>,
@@ -29,7 +28,6 @@ pub enum Event {
         reason: &'static str,
     },
     Started(SocketAddr),
-    Stopped,
     Failed(String),
 }
 
@@ -63,6 +61,10 @@ impl Handler for LogHandler {
         path: &Path,
     ) -> Result<(Self::Reader, Option<u64>), TftpError> {
         let name = path.display().to_string();
+        let _ = self.tx.send(Event::ReadRequested {
+            client: *client,
+            file: name.clone(),
+        });
 
         let Some(full) = self.resolve(path) else {
             let _ = self.tx.send(Event::Denied {
@@ -105,14 +107,9 @@ impl Handler for LogHandler {
         &mut self,
         client: &SocketAddr,
         path: &Path,
-        size: Option<u64>,
+        _size: Option<u64>,
     ) -> Result<Self::Writer, TftpError> {
         let name = path.display().to_string();
-        let _ = self.tx.send(Event::Write {
-            client: *client,
-            file: name.clone(),
-            size,
-        });
         let _ = self.tx.send(Event::Denied {
             client: *client,
             file: name,
@@ -156,7 +153,7 @@ pub fn start(addr: SocketAddr, root: PathBuf, tx: Sender<Event>) -> Result<Serve
         .map_err(|e| format!("创建网络线程失败：{e}"))?;
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    let tx_task = tx.clone();
+    let tx_task = tx;
 
     runtime.spawn(async move {
         let handler = LogHandler {
@@ -185,12 +182,12 @@ pub fn start(addr: SocketAddr, root: PathBuf, tx: Sender<Event>) -> Result<Serve
             result = server.serve() => {
                 if let Err(err) = result {
                     let _ = tx_task.send(Event::Failed(format!("{err}")));
+                } else {
+                    let _ = tx_task.send(Event::Failed("服务意外停止".to_string()));
                 }
             }
             _ = shutdown_rx => {}
         }
-
-        let _ = tx_task.send(Event::Stopped);
     });
 
     Ok(ServerHandle {
