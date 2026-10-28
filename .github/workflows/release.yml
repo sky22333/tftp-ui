@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '版本标签（如 v1.0.0），将创建同名 tag 与 Release'
+        description: '版本标签（如 v1.0.0）'
         required: true
         type: string
 
@@ -20,7 +20,7 @@ jobs:
     name: 构建并发布
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: 校验标签格式
         shell: pwsh
@@ -60,7 +60,7 @@ jobs:
           [IO.File]::WriteAllText("$PWD/dist/tftp-ui.exe.sha256", "$hash  tftp-ui.exe")
 
       - name: 发布 Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
           name: TFTP 服务端 ${{ inputs.tag }}
