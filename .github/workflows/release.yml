@@ -68,10 +68,6 @@ jobs:
             dist/tftp-ui.exe
             dist/tftp-ui.exe.sha256
           body: |
-            轻量 TFTP 服务端，Windows x64 单 exe，静态 CRT，免装 VC++ 运行库。
+            轻量 TFTP 服务端，Windows x64 单 exe
 
-            **使用**：双击运行 → 选网卡与根目录 → 启动服务 → 设备端执行 `tftp <本机IP> GET <文件>`。
-
-            **校验**：`certutil -hashfile tftp-ui.exe SHA256`，与 `.sha256` 文件比对。
-
-            > 只读模式：写入请求与路径穿越尝试均被拒绝并记入日志。
+            **使用**：双击运行 → 选网卡与文件目录 → 启动服务
